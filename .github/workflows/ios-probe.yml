@@ -152,18 +152,23 @@ jobs:
       - name: Pack IPAs
         if: always()
         run: |
-          set -euo pipefail
-          for pair in "DQ8Minimal:build/ios/iosprobe/DQ8Minimal.app" "DQ8Probe:build/ios/iosprobe/DQ8Probe.app"; do
-            name="${pair%%:*}"
-            app="${pair##*:}"
-            [ -x "$app/$(basename "${app%.app}")" ] || { echo "skip $name (no executable)"; continue; }
+          set +e
+          echo "--- tree"
+          ls -la build/ios/iosprobe || true
+          for pair in "DQ8Minimal:build/ios/iosprobe/DQ8Minimal.app:DQ8Minimal" "DQ8Probe:build/ios/iosprobe/DQ8Probe.app:DQ8Probe"; do
+            name=$(echo "$pair" | cut -d: -f1)
+            app=$(echo "$pair" | cut -d: -f2)
+            exe=$(echo "$pair" | cut -d: -f3)
+            if [ ! -f "$app/$exe" ]; then echo "skip $name (no $exe)"; continue; fi
             rm -rf "$RUNNER_TEMP/Payload-$name"
             mkdir -p "$RUNNER_TEMP/Payload-$name"
             cp -R "$app" "$RUNNER_TEMP/Payload-$name/"
-            ( cd "$RUNNER_TEMP/Payload-$name" && zip -qry "$RUNNER_TEMP/$name-unsigned.ipa" Payload ) || true
+            ( cd "$RUNNER_TEMP/Payload-$name" && ditto -c -k --sequesterRsrc --keepParent Payload "$RUNNER_TEMP/$name-unsigned.ipa" )
+            echo "== $name"
             ls -l "$RUNNER_TEMP/$name-unsigned.ipa"
             shasum -a 256 "$RUNNER_TEMP/$name-unsigned.ipa"
           done
+          true
 
       - name: Upload artifacts
         if: always()
