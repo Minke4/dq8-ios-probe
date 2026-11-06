@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       host:
-        description: "Build the iOS host shell (needs the SDL3 port of the raylib call surface)"
+        description: "Build the iOS host shell"
         type: boolean
         default: true
 
@@ -102,9 +102,9 @@ jobs:
           set +e
           cmake --build build/ios --target dq8-ios 2>&1 | tee "$RUNNER_TEMP/host.log"
           echo "host rc=${PIPESTATUS[0]}"
-          echo "### iOS host link errors" >> "$GITHUB_STEP_SUMMARY"
+          echo "### iOS host build errors" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -E "error:|Undefined symbols|ld: |_raylib|_Is|_Get|_Load|_Init" "$RUNNER_TEMP/host.log" | head -40 >> "$GITHUB_STEP_SUMMARY" || echo none >> "$GITHUB_STEP_SUMMARY"
+          grep -E "error:|Undefined symbols|ld: " "$RUNNER_TEMP/host.log" | head -40 >> "$GITHUB_STEP_SUMMARY" || echo none >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Inspect binaries
@@ -116,8 +116,19 @@ jobs:
             file "$b"
             xcrun lipo -info "$b" || true
             xcrun otool -l "$b" | grep -A3 LC_BUILD_VERSION | head -5 || true
-            xcrun otool -L "$b" | head -8
+            xcrun otool -L "$b" | head -12
           done
+
+      - name: Verify the app bundle
+        if: always()
+        run: |
+          APP=build/ios/iosprobe/DQ8Probe.app
+          [ -d "$APP" ] || { echo "no host app"; exit 0; }
+          echo "--- bundle contents"; ls -la "$APP"
+          echo "--- Info.plist"; plutil -p "$APP/Info.plist" || true
+          echo "--- signature"; codesign -dvv "$APP" 2>&1 | head -5 || echo "unsigned (expected)"
+          echo "--- SDL_RunApp wiring"
+          xcrun nm "$APP/DQ8Probe" | grep -i "UIApplicationMain\|SDL_RunApp" | head -5 || true
 
       - name: Pack unsigned IPA
         if: always()
@@ -129,6 +140,7 @@ jobs:
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
           ( cd "$RUNNER_TEMP" && zip -qry DQ8Probe-unsigned.ipa Payload )
           ls -l "$RUNNER_TEMP/DQ8Probe-unsigned.ipa"
+          echo "ipa sha256: $(shasum -a 256 "$RUNNER_TEMP/DQ8Probe-unsigned.ipa" | cut -d' ' -f1)"
 
       - name: Upload artifacts
         if: always()
@@ -139,4 +151,4 @@ jobs:
             ${{ runner.temp }}/*.log
             ${{ runner.temp }}/DQ8Probe-unsigned.ipa
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 14
