@@ -56,7 +56,7 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
             -DCMAKE_BUILD_TYPE=Release \
             -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF \
-            -DSDL_STATIC=ON -DSDL_SHARED=ON -DSDL_FRAMEWORK=ON
+            -DSDL_STATIC=ON -DSDL_SHARED=ON -DSDL_FRAMEWORK=OFF
           cmake --build build/sdl-ios --parallel 3
           cmake --install build/sdl-ios --prefix "$RUNNER_TEMP/sdl-ios"
           find "$RUNNER_TEMP/sdl-ios" -maxdepth 3 | head -40
