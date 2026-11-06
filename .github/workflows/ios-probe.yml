@@ -156,11 +156,11 @@ jobs:
           for pair in "DQ8Minimal:build/ios/iosprobe/DQ8Minimal.app" "DQ8Probe:build/ios/iosprobe/DQ8Probe.app"; do
             name="${pair%%:*}"
             app="${pair##*:}"
-            [ -d "$app" ] || { echo "skip $name"; continue; }
+            [ -x "$app/$(basename "${app%.app}")" ] || { echo "skip $name (no executable)"; continue; }
             rm -rf "$RUNNER_TEMP/Payload-$name"
             mkdir -p "$RUNNER_TEMP/Payload-$name"
             cp -R "$app" "$RUNNER_TEMP/Payload-$name/"
-            ( cd "$RUNNER_TEMP/Payload-$name" && zip -qry "$RUNNER_TEMP/$name-unsigned.ipa" Payload )
+            ( cd "$RUNNER_TEMP/Payload-$name" && zip -qry "$RUNNER_TEMP/$name-unsigned.ipa" Payload ) || true
             ls -l "$RUNNER_TEMP/$name-unsigned.ipa"
             shasum -a 256 "$RUNNER_TEMP/$name-unsigned.ipa"
           done
