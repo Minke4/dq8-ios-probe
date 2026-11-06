@@ -81,7 +81,9 @@ else()
         GIT_TAG "5.5" # we will migrate to 4.2.0 later, trust me it will be better
         GIT_PROGRESS TRUE
     )
-    FetchContent_MakeAvailable(raylib)
+    if(PS2X_ENABLE_DEBUG_UI)
+        FetchContent_MakeAvailable(raylib)
+    endif()
 
     if(PS2X_ENABLE_DEBUG_UI AND NOT PS2X_IS_ANDROID)
         FetchContent_Declare(
