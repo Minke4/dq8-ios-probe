@@ -58,6 +58,22 @@ set_target_properties(dq8-ios PROPERTIES
 
 set_property(TARGET dq8-ios PROPERTY XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
 
+# get-task-allow so the app can be attached to a debugger / console when it is
+# re-signed with a development profile. Harmless for ad-hoc signing tools.
+set(IOS_PROBE_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/DQ8Probe.entitlements")
+file(WRITE "${IOS_PROBE_ENTITLEMENTS}"
+"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+"<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+"<plist version=\"1.0\">\n"
+"<dict>\n"
+"    <key>get-task-allow</key>\n"
+"    <true/>\n"
+"    <key>com.apple.security.get-task-allow</key>\n"
+"    <true/>\n"
+"</dict>\n"
+"</plist>\n")
+set_target_properties(dq8-ios PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${IOS_PROBE_ENTITLEMENTS}")
+
 # Launch screen / orientation / minimum OS come from a generated Info.plist so
 # the unsigned IPA is installable by anything that only re-signs it.
 set(IOS_PROBE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/DQ8Probe-Info.plist")
