@@ -153,23 +153,29 @@ jobs:
         if: always()
         run: |
           set +e
-          echo "--- tree"
-          ls -la build/ios/iosprobe || true
-          for pair in "DQ8Minimal:build/ios/iosprobe/DQ8Minimal.app:DQ8Minimal" "DQ8Probe:build/ios/iosprobe/DQ8Probe.app:DQ8Probe"; do
-            name=$(echo "$pair" | cut -d: -f1)
-            app=$(echo "$pair" | cut -d: -f2)
-            exe=$(echo "$pair" | cut -d: -f3)
-            if [ ! -f "$app/$exe" ]; then echo "skip $name (no $exe)"; continue; fi
-            rm -rf "$RUNNER_TEMP/Payload-$name"
-            mkdir -p "$RUNNER_TEMP/Payload-$name"
-            cp -R "$app" "$RUNNER_TEMP/Payload-$name/"
-            # ditto is unhappy with the temp dir layout here; zip is enough for
-            # an unsigned IPA that a signing tool will rebuild anyway.
-            ( cd "$RUNNER_TEMP/Payload-$name" && zip -qry "$RUNNER_TEMP/$name-unsigned.ipa" Payload )
-            echo "== $name"
-            ls -l "$RUNNER_TEMP/$name-unsigned.ipa"
-            shasum -a 256 "$RUNNER_TEMP/$name-unsigned.ipa"
-          done
+          # One app at a time, each in its own directory, using the layout that
+          # already produced a working IPA: Payload/<App>.app + zip from inside.
+          rm -rf "$RUNNER_TEMP/pack-minimal" "$RUNNER_TEMP/pack-probe"
+          mkdir -p "$RUNNER_TEMP/pack-minimal/Payload" "$RUNNER_TEMP/pack-probe/Payload"
+
+          if [ -f build/ios/iosprobe/DQ8Minimal.app/DQ8Minimal ]; then
+            cp -R build/ios/iosprobe/DQ8Minimal.app "$RUNNER_TEMP/pack-minimal/Payload/"
+            ( cd "$RUNNER_TEMP/pack-minimal" && zip -qry "$RUNNER_TEMP/DQ8Minimal-unsigned.ipa" Payload )
+            echo "== DQ8Minimal"; ls -l "$RUNNER_TEMP/DQ8Minimal-unsigned.ipa"
+            shasum -a 256 "$RUNNER_TEMP/DQ8Minimal-unsigned.ipa"
+          else
+            echo "no minimal app"
+          fi
+
+          if [ -f build/ios/iosprobe/DQ8Probe.app/DQ8Probe ]; then
+            cp -R build/ios/iosprobe/DQ8Probe.app "$RUNNER_TEMP/pack-probe/Payload/"
+            ( cd "$RUNNER_TEMP/pack-probe" && zip -qry "$RUNNER_TEMP/DQ8Probe-unsigned.ipa" Payload )
+            echo "== DQ8Probe"; ls -l "$RUNNER_TEMP/DQ8Probe-unsigned.ipa"
+            shasum -a 256 "$RUNNER_TEMP/DQ8Probe-unsigned.ipa"
+            unzip -l "$RUNNER_TEMP/DQ8Probe-unsigned.ipa"
+          else
+            echo "no probe app"
+          fi
           true
 
       - name: Upload artifacts
