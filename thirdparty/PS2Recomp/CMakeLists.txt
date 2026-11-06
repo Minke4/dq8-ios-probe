@@ -29,6 +29,13 @@ endif()
 
 set(PS2X_IS_ARM_TARGET OFF)
 set(PS2X_IS_AARCH64_TARGET OFF)
+# iOS cross builds report CMAKE_SYSTEM_PROCESSOR=arm64 only through
+# CMAKE_OSX_ARCHITECTURES; accept both, plus the explicit override used by the
+# iOS probe, so <immintrin.h> is never pulled on an ARM host.
+if(IOS_PROBE)
+    set(PS2X_IS_ARM_TARGET ON)
+endif()
+
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64")
     set(PS2X_IS_ARM_TARGET ON)
     set(PS2X_IS_AARCH64_TARGET ON)
