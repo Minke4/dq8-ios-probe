@@ -31,11 +31,12 @@ target_link_libraries(dq8-ios PRIVATE ps2_runtime)
 if(TARGET dq8_gfx_sdlgpu)
     target_link_libraries(dq8-ios PRIVATE dq8_gfx_sdlgpu)
 endif()
-if(TARGET SDL3::SDL3)
-    target_link_libraries(dq8-ios PRIVATE SDL3::SDL3)
-else()
-    message(FATAL_ERROR "iosprobe: SDL3::SDL3 target missing; the iOS host needs SDL3 >= 3.2")
+# Imported targets belong to the directory that found them, so SDL3::SDL3 is
+# not visible here even though src/gfx found it. Resolve it locally.
+if(NOT TARGET SDL3::SDL3)
+    find_package(SDL3 3.2 CONFIG REQUIRED)
 endif()
+target_link_libraries(dq8-ios PRIVATE SDL3::SDL3)
 
 if(APPLE)
     target_link_libraries(dq8-ios PRIVATE
