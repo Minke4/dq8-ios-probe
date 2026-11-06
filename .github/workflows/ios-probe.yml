@@ -1,0 +1,154 @@
+name: iOS Probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_ipa:
+        description: "Build the .app even if the stub still refuses to link"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: DQ8 runtime on iOS (arm64)
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      CC: clang
+      CXX: clang++
+      PYTHONDONTWRITEBYTECODE: '1'
+      SDL_REF: release-3.4.16
+    steps:
+      - name: Check out DQ8
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: Toolchain report
+        run: |
+          set -x
+          xcodebuild -version || true
+          xcrun --sdk iphoneos --show-sdk-version || true
+          xcrun --sdk iphoneos --show-sdk-path || true
+          cmake --version | head -1
+          which ninja || brew install ninja
+          ninja --version
+          brew install spirv-cross 2>/dev/null || true
+
+      - name: Check out SDL3
+        uses: actions/checkout@v4
+        with:
+          repository: libsdl-org/SDL
+          ref: release-3.4.16
+          path: build/SDL
+          persist-credentials: false
+
+      - name: Build SDL3 static framework for iOS
+        run: |
+          set -euo pipefail
+          cmake -S build/SDL -B build/sdl-ios \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF \
+            -DSDL_STATIC=ON -DSDL_SHARED=OFF -DSDL_FRAMEWORK=ON
+          cmake --build build/sdl-ios --parallel 3
+          cmake --install build/sdl-ios --prefix "$RUNNER_TEMP/sdl-ios"
+          find "$RUNNER_TEMP/sdl-ios" -maxdepth 3 | head -40
+
+      - name: Configure DQ8 for iOS
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/ios-probe \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/sdl-ios" \
+            -DDQ8_BUILD_PS2RECOMP=ON \
+            -DDQ8_LINK_GENERATED=OFF \
+            -DDQ8_GFX_ENABLE_SDLGPU=ON \
+            -DPS2X_BUILD_STUDIO=OFF \
+            -DPS2X_BUILD_TEST=OFF \
+            -DPS2X_BUILD_RECOMP=OFF \
+            -DPS2X_BUILD_ANALYZER=OFF \
+            -DPS2X_BUILD_RUNTIME=ON \
+            -DPS2X_ENABLE_FFMPEG=OFF \
+            -DPS2X_ENABLE_DEBUG_UI=OFF \
+            -DPS2X_ENABLE_SCCACHE=OFF \
+            2>&1 | tee "$RUNNER_TEMP/configure.log"
+
+      - name: Compile runtime for iOS
+        run: |
+          set +e
+          cmake --build build/ios-probe --target dq8 -j 3 2>&1 | tee "$RUNNER_TEMP/build.log"
+          echo "rc=${PIPESTATUS[0]}" | tee "$RUNNER_TEMP/build-rc.txt"
+
+      - name: Collect first errors
+        if: always()
+        run: |
+          echo "### First errors" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E "error:|fatal error|Undefined symbols|ld: |CMake Error" "$RUNNER_TEMP/build.log" | head -40 >> "$GITHUB_STEP_SUMMARY" || echo "none" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -cE "error:" "$RUNNER_TEMP/build.log" | sed 's/^/error count: /' || true
+
+      - name: Inspect the produced binary
+        if: always()
+        run: |
+          BIN=$(find build/ios-probe -name dq8 -type f 2>/dev/null | head -1)
+          echo "binary: ${BIN:-<none>}"
+          if [ -n "$BIN" ]; then
+            file "$BIN"
+            xcrun lipo -info "$BIN" || true
+            xcrun otool -l "$BIN" | grep -E "LC_BUILD_VERSION|platform|minos|sdk" | head -8 || true
+          fi
+
+      - name: Pack a test .app
+        if: always()
+        run: |
+          set -euo pipefail
+          BIN=$(find build/ios-probe -name dq8 -type f 2>/dev/null | head -1)
+          if [ -z "$BIN" ]; then echo "no binary, skipping app"; exit 0; fi
+          APP="$RUNNER_TEMP/Payload/DQ8Probe.app"
+          mkdir -p "$APP"
+          cp "$BIN" "$APP/DQ8Probe"
+          cat > "$APP/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>DQ8Probe</string>
+            <key>CFBundleIdentifier</key><string>dev.minis.dq8probe</string>
+            <key>CFBundleName</key><string>DQ8Probe</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>CFBundleShortVersionString</key><string>0.1</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>MinimumOSVersion</key><string>16.0</string>
+            <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+          </dict>
+          </plist>
+          PLIST
+          if [ -d "$RUNNER_TEMP/sdl-ios/SDL3.framework" ]; then
+            cp -R "$RUNNER_TEMP/sdl-ios/SDL3.framework" "$APP/" || true
+          fi
+          ( cd "$RUNNER_TEMP" && zip -qry DQ8Probe-unsigned.ipa Payload )
+          echo "ipa: $(ls -l "$RUNNER_TEMP/DQ8Probe-unsigned.ipa")"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-probe
+          path: |
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/configure.log
+            ${{ runner.temp }}/DQ8Probe-unsigned.ipa
+          if-no-files-found: warn
+          retention-days: 7
