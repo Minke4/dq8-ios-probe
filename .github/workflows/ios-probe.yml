@@ -71,6 +71,8 @@ jobs:
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/sdl-ios" \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+            -DSDL3_DIR="$RUNNER_TEMP/sdl-ios/lib/cmake/SDL3" \
             -DDQ8_BUILD_PS2RECOMP=ON \
             -DDQ8_LINK_GENERATED=OFF \
             -DDQ8_GFX_ENABLE_SDLGPU=ON \

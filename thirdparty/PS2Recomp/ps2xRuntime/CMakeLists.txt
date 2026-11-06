@@ -711,10 +711,13 @@ if(PS2X_IS_ANDROID)
     target_sources(ps2EntryRunner PRIVATE src/lib/ps2_android_runtime.cpp)
 endif()
 
+# iOS probe: CMAKE_SYSTEM_NAME=iOS turns executables into MACOSX_BUNDLE, which
+# CMake refuses to install without a BUNDLE DESTINATION.
 install(TARGETS ps2_runtime ps2EntryRunner
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
+    BUNDLE DESTINATION .
 )
 
 if(WIN32 AND PS2X_ENABLE_FFMPEG)
