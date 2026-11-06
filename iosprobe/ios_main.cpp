@@ -1,3 +1,4 @@
+/*
 #!/bin/sh
 # Host-side entry point for the probe app.
 #
@@ -16,6 +17,7 @@
 #   * TODO(ios): replace the raylib call surface with SDL3 equivalents
 #     (SDL_GetKeyboardState / SDL_GetGamepadAxis / SDL_OpenAudioDeviceStream),
 #     then link dq8_gfx_sdlgpu and pump the GS backend from here.
+*/
 
 #if defined(IOS_PROBE_STUB)
 
