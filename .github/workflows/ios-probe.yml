@@ -93,6 +93,16 @@ jobs:
           cmake --build build/ios-probe --target dq8 -j 3 2>&1 | tee "$RUNNER_TEMP/build.log"
           echo "rc=${PIPESTATUS[0]}" | tee "$RUNNER_TEMP/build-rc.txt"
 
+      - name: Build the SDL3 GPU graphics tree
+        run: |
+          set +e
+          cmake --build build/ios-probe --target dq8_gfx_sdlgpu -j 3 2>&1 | tee "$RUNNER_TEMP/gfx.log"
+          echo "gfx rc=${PIPESTATUS[0]}"
+          echo "### graphics build errors" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E "error:|ld: |Undefined symbols" "$RUNNER_TEMP/gfx.log" | head -30 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Dylib closure and undefined symbols
         run: |
           set +e
@@ -162,6 +172,7 @@ jobs:
           name: ios-probe
           path: |
             ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/gfx.log
             ${{ runner.temp }}/configure.log
             ${{ runner.temp }}/DQ8Probe-unsigned.ipa
           if-no-files-found: warn
