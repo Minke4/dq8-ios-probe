@@ -37,7 +37,8 @@ jobs:
           cmake --version | head -1
           which ninja || brew install ninja
           ninja --version
-          brew install spirv-cross 2>/dev/null || true
+          brew install glslang spirv-cross 2>/dev/null || true
+          which glslangValidator glslang glslc spirv-cross || true
 
       - name: Check out SDL3
         uses: actions/checkout@v4
