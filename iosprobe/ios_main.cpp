@@ -49,20 +49,21 @@ void DrawStatusFrame(SDL_Renderer *renderer, int frame)
 
     // Title bar: green once the GPU device and renderer are live.
     SDL_SetRenderDrawColor(renderer, 40, 200, 120, 255);
-    SDL_Rect bar{0, 0, kWindowWidth, 64};
+    SDL_FRect bar{0.0f, 0.0f, static_cast<float>(kWindowWidth), 64.0f};
     SDL_RenderFillRect(renderer, &bar);
 
     // Frame counter as a moving block (bottom edge) so a still screenshot shows
     // the loop really advanced.
     SDL_SetRenderDrawColor(renderer, 240, 200, 60, 255);
     const int x = (frame * 6) % (kWindowWidth - 60);
-    SDL_Rect marker{x, kWindowHeight - 24, 60, 24};
+    SDL_FRect marker{static_cast<float>(x), static_cast<float>(kWindowHeight - 24), 60.0f, 24.0f};
     SDL_RenderFillRect(renderer, &marker);
 
     // Three horizontal lines: a cheap visual "this is the probe, not the game".
     SDL_SetRenderDrawColor(renderer, 90, 110, 150, 255);
     for (int i = 0; i < 3; ++i) {
-        SDL_Rect line{120, 240 + i * 60, 800 - i * 120, 8};
+        SDL_FRect line{120.0f, static_cast<float>(240 + i * 60),
+                       static_cast<float>(800 - i * 120), 8.0f};
         SDL_RenderFillRect(renderer, &line);
     }
 
