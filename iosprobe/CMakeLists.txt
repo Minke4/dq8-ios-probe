@@ -1,19 +1,20 @@
 # iOS host shell for the probe.
 #
-# Built only when IOS_PROBE=ON. It exists so the iOS target has something of its
-# own to link while the raylib call surface inside ps2xRuntime is replaced by
-# SDL3 (SDL_GetKeyboardState / SDL_GetGamepadAxis / SDL_OpenAudioDeviceStream).
+# Built only when IOS_PROBE=ON. Its reason to exist: ps2xRuntime includes
+# raylib.h and calls a small slice of raylib for window/keyboard/gamepad/audio,
+# and raylib's desktop OpenGL path cannot build for iOS. rl_shim.cpp supplies
+# those symbols on top of SDL3, and the real rendering is dq8_gfx_sdlgpu
+# (SDL3 GPU -> Metal).
 
 option(IOS_PROBE_STUB "Link the stub host instead of a generated corpus" ON)
 
-add_executable(dq8-ios ios_main.cpp)
+set(IOS_PROBE_RAYLIB_HEADERS "${CMAKE_SOURCE_DIR}/thirdparty/raylib-headers")
 
-if(NOT IOS_PROBE_STUB)
-    message(STATUS "iosprobe: generated corpus build requested; host is still a placeholder")
-endif()
+add_executable(dq8-ios ios_main.cpp rl_shim.cpp)
 
-# The game runtime and the graphics backend. A link failure here is the
-# deliverable: the log names the raylib symbols that still need SDL3.
+# The runtime includes "raylib.h" through ps2_host_backend.h; point it at the
+# upstream header we vendor, so the declarations match the shim exactly.
+target_include_directories(dq8-ios PRIVATE "${IOS_PROBE_RAYLIB_HEADERS}")
 target_link_libraries(dq8-ios PRIVATE ps2_runtime)
 if(TARGET dq8_gfx_sdlgpu)
     target_link_libraries(dq8-ios PRIVATE dq8_gfx_sdlgpu)

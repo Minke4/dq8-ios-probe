@@ -132,6 +132,12 @@ else()
 endif()
 
 add_library(ps2_host_backend INTERFACE)
+if(IOS_PROBE)
+    # Vendor the upstream raylib header; the iOS host supplies the symbols.
+    target_include_directories(ps2_host_backend INTERFACE
+        "${CMAKE_SOURCE_DIR}/thirdparty/raylib-headers")
+    target_compile_definitions(ps2_host_backend INTERFACE IOS_PROBE_HOST_BACKEND=1)
+endif()
 
 set(PS2X_DEFAULT_BOOT_ELF_DEFINE "")
 
