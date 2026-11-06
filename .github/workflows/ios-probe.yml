@@ -93,6 +93,17 @@ jobs:
           cmake --build build/ios-probe --target dq8 -j 3 2>&1 | tee "$RUNNER_TEMP/build.log"
           echo "rc=${PIPESTATUS[0]}" | tee "$RUNNER_TEMP/build-rc.txt"
 
+      - name: Dylib closure and undefined symbols
+        run: |
+          set +e
+          BIN=build/ios-probe/src/runtime/dq8.app/dq8
+          echo "--- otool -L"
+          xcrun otool -L "$BIN"
+          echo "--- undefined (non-system) symbols"
+          xcrun nm -u "$BIN" | head -40
+          echo "--- SDL3 GPU symbols present in the final binary"
+          xcrun nm "$BIN" 2>/dev/null | grep -c "SDL_GPU\|SDL_CreateGPUDevice" || true
+
       - name: Collect first errors
         if: always()
         run: |
