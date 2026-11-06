@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       host:
-        description: "Build the iOS host shell"
+        description: "Build the iOS host shells"
         type: boolean
         default: true
 
@@ -36,7 +36,6 @@ jobs:
           cmake --version | head -1
           which ninja || brew install ninja
           brew install glslang spirv-cross 2>/dev/null || true
-          which glslangValidator spirv-cross
 
       - name: Check out SDL3
         uses: actions/checkout@v4
@@ -46,7 +45,7 @@ jobs:
           path: build/SDL
           persist-credentials: false
 
-      - name: Build SDL3 static libraries for iOS
+      - name: Build SDL3 for iOS
         run: |
           set -euo pipefail
           cmake -S build/SDL -B build/sdl-ios -G Ninja \
@@ -55,9 +54,12 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
             -DCMAKE_BUILD_TYPE=Release \
             -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF \
-            -DSDL_STATIC=ON -DSDL_SHARED=ON -DSDL_FRAMEWORK=OFF
+            -DSDL_STATIC=ON -DSDL_SHARED=OFF -DSDL_FRAMEWORK=OFF
           cmake --build build/sdl-ios
           cmake --install build/sdl-ios --prefix "$RUNNER_TEMP/sdl-ios"
+          echo "--- installed targets"
+          ls "$RUNNER_TEMP/sdl-ios/lib"
+          grep -h "add_library(SDL3::" "$RUNNER_TEMP/sdl-ios/lib/cmake/SDL3/"*.cmake | head -10
 
       - name: Configure DQ8 for iOS
         run: |
@@ -83,6 +85,7 @@ jobs:
             -DPS2X_ENABLE_SCCACHE=OFF \
             -DIOS_PROBE=ON \
             2>&1 | tee "$RUNNER_TEMP/configure.log"
+          grep -E "iosprobe:" "$RUNNER_TEMP/configure.log" || true
 
       - name: Build runtime stub
         run: |
@@ -96,7 +99,14 @@ jobs:
           cmake --build build/ios --target dq8_gfx_sdlgpu 2>&1 | tee "$RUNNER_TEMP/gfx.log"
           echo "gfx rc=${PIPESTATUS[0]}"
 
-      - name: Build the iOS host shell
+      - name: Build the bare SDL3 probe
+        if: ${{ inputs.host }}
+        run: |
+          set +e
+          cmake --build build/ios --target dq8-ios-minimal 2>&1 | tee "$RUNNER_TEMP/minimal.log"
+          echo "minimal rc=${PIPESTATUS[0]}"
+
+      - name: Build the full probe host
         if: ${{ inputs.host }}
         run: |
           set +e
@@ -104,43 +114,56 @@ jobs:
           echo "host rc=${PIPESTATUS[0]}"
           echo "### iOS host build errors" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -E "error:|Undefined symbols|ld: " "$RUNNER_TEMP/host.log" | head -40 >> "$GITHUB_STEP_SUMMARY" || echo none >> "$GITHUB_STEP_SUMMARY"
+          grep -E "error:|Undefined symbols|ld: " "$RUNNER_TEMP/host.log" | head -30 >> "$GITHUB_STEP_SUMMARY" || echo none >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Inspect binaries
+      - name: Inspect binaries and dylib closure
         if: always()
         run: |
-          for b in build/ios/src/runtime/dq8.app/dq8 build/ios/iosprobe/DQ8Probe.app/DQ8Probe; do
+          set +e
+          echo "### Binary inspection" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          for b in build/ios/iosprobe/DQ8Minimal.app/DQ8Minimal build/ios/iosprobe/DQ8Probe.app/DQ8Probe; do
             [ -f "$b" ] || continue
             echo "=== $b"
-            file "$b"
-            xcrun lipo -info "$b" || true
-            xcrun otool -l "$b" | grep -A3 LC_BUILD_VERSION | head -5 || true
-            xcrun otool -L "$b" | head -12
-          done
+            xcrun lipo -info "$b"
+            xcrun otool -l "$b" | grep -A3 LC_BUILD_VERSION | head -4
+            echo "-- linked libraries (must be /System or /usr/lib only)"
+            xcrun otool -L "$b"
+            echo "-- ObjC delegate classes present?"
+            xcrun nm "$b" | grep -c "SDLUIKitSceneDelegate"
+            echo "-- SDL_RunApp"
+            xcrun nm -u "$b" | grep -c "SDL_RunApp"
+            echo
+          done >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify the app bundle
+      - name: Verify app bundles
         if: always()
         run: |
-          APP=build/ios/iosprobe/DQ8Probe.app
-          [ -d "$APP" ] || { echo "no host app"; exit 0; }
-          echo "--- bundle contents"; ls -la "$APP"
-          echo "--- Info.plist"; plutil -p "$APP/Info.plist" || true
-          echo "--- signature"; codesign -dvv "$APP" 2>&1 | head -5 || echo "unsigned (expected)"
-          echo "--- SDL_RunApp wiring"
-          xcrun nm "$APP/DQ8Probe" | grep -i "UIApplicationMain\|SDL_RunApp" | head -5 || true
+          for APP in build/ios/iosprobe/DQ8Minimal.app build/ios/iosprobe/DQ8Probe.app; do
+            [ -d "$APP" ] || { echo "missing $APP"; continue; }
+            echo "=== $APP"
+            ls -la "$APP"
+            plutil -p "$APP/Info.plist" | head -20
+            codesign -dvv "$APP" 2>&1 | head -3 || echo "unsigned (expected)"
+          done
 
-      - name: Pack unsigned IPA
+      - name: Pack IPAs
         if: always()
         run: |
           set -euo pipefail
-          APP=build/ios/iosprobe/DQ8Probe.app
-          if [ ! -d "$APP" ]; then echo "no host app produced"; exit 0; fi
-          rm -rf "$RUNNER_TEMP/Payload"; mkdir -p "$RUNNER_TEMP/Payload"
-          cp -R "$APP" "$RUNNER_TEMP/Payload/"
-          ( cd "$RUNNER_TEMP" && zip -qry DQ8Probe-unsigned.ipa Payload )
-          ls -l "$RUNNER_TEMP/DQ8Probe-unsigned.ipa"
-          echo "ipa sha256: $(shasum -a 256 "$RUNNER_TEMP/DQ8Probe-unsigned.ipa" | cut -d' ' -f1)"
+          for pair in "DQ8Minimal:build/ios/iosprobe/DQ8Minimal.app" "DQ8Probe:build/ios/iosprobe/DQ8Probe.app"; do
+            name="${pair%%:*}"
+            app="${pair##*:}"
+            [ -d "$app" ] || { echo "skip $name"; continue; }
+            rm -rf "$RUNNER_TEMP/Payload-$name"
+            mkdir -p "$RUNNER_TEMP/Payload-$name"
+            cp -R "$app" "$RUNNER_TEMP/Payload-$name/"
+            ( cd "$RUNNER_TEMP/Payload-$name" && zip -qry "$RUNNER_TEMP/$name-unsigned.ipa" Payload )
+            ls -l "$RUNNER_TEMP/$name-unsigned.ipa"
+            shasum -a 256 "$RUNNER_TEMP/$name-unsigned.ipa"
+          done
 
       - name: Upload artifacts
         if: always()
@@ -149,6 +172,6 @@ jobs:
           name: ios-probe
           path: |
             ${{ runner.temp }}/*.log
-            ${{ runner.temp }}/DQ8Probe-unsigned.ipa
+            ${{ runner.temp }}/*-unsigned.ipa
           if-no-files-found: warn
           retention-days: 14

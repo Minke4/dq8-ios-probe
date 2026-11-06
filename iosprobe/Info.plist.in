@@ -5,30 +5,27 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>DQ8Probe</string>
+    <string>@IOS_PROBE_EXECUTABLE@</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.minis.dq8probe</string>
+    <string>@IOS_PROBE_BUNDLE_ID@</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>DQ8Probe</string>
+    <string>@IOS_PROBE_EXECUTABLE@</string>
     <key>CFBundleDisplayName</key>
-    <string>DQ8 Probe</string>
+    <string>@IOS_PROBE_DISPLAY_NAME@</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1</string>
+    <string>0.3</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>3</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>MinimumOSVersion</key>
     <string>16.0</string>
     <key>UILaunchScreen</key>
-    <dict>
-        <key>UIColorName</key>
-        <string></string>
-    </dict>
+    <dict/>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
