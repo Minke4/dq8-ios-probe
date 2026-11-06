@@ -163,7 +163,9 @@ jobs:
             rm -rf "$RUNNER_TEMP/Payload-$name"
             mkdir -p "$RUNNER_TEMP/Payload-$name"
             cp -R "$app" "$RUNNER_TEMP/Payload-$name/"
-            ( cd "$RUNNER_TEMP/Payload-$name" && ditto -c -k --sequesterRsrc --keepParent Payload "$RUNNER_TEMP/$name-unsigned.ipa" )
+            # iSH-style shells resolve relative paths oddly; stay absolute.
+            ditto -c -k --sequesterRsrc --keepParent \
+              "$RUNNER_TEMP/Payload-$name/Payload" "$RUNNER_TEMP/$name-unsigned.ipa"
             echo "== $name"
             ls -l "$RUNNER_TEMP/$name-unsigned.ipa"
             shasum -a 256 "$RUNNER_TEMP/$name-unsigned.ipa"
