@@ -190,3 +190,9 @@ endif()
 
 add_subdirectory(src)
 add_subdirectory(tools/runtime EXCLUDE_FROM_ALL)
+
+# iOS probe host: only present in this fork, never in upstream builds.
+option(IOS_PROBE "Build the iOS host shell (this fork only)" OFF)
+if(IOS_PROBE)
+    add_subdirectory(iosprobe)
+endif()

@@ -3,42 +3,40 @@ name: iOS Probe
 on:
   workflow_dispatch:
     inputs:
-      force_ipa:
-        description: "Build the .app even if the stub still refuses to link"
+      host:
+        description: "Build the iOS host shell (needs the SDL3 port of the raylib call surface)"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
 
+env:
+  CC: clang
+  CXX: clang++
+  PYTHONDONTWRITEBYTECODE: '1'
+
 jobs:
-  probe:
-    name: DQ8 runtime on iOS (arm64)
+  verify:
+    name: Runtime cross-build
     runs-on: macos-15
     timeout-minutes: 90
-    env:
-      CC: clang
-      CXX: clang++
-      PYTHONDONTWRITEBYTECODE: '1'
-      SDL_REF: release-3.4.16
     steps:
-      - name: Check out DQ8
+      - name: Check out the probe tree
         uses: actions/checkout@v4
         with:
           submodules: true
           persist-credentials: false
 
-      - name: Toolchain report
+      - name: Toolchain
         run: |
           set -x
-          xcodebuild -version || true
-          xcrun --sdk iphoneos --show-sdk-version || true
-          xcrun --sdk iphoneos --show-sdk-path || true
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
           cmake --version | head -1
           which ninja || brew install ninja
-          ninja --version
           brew install glslang spirv-cross 2>/dev/null || true
-          which glslangValidator glslang glslc spirv-cross || true
+          which glslangValidator spirv-cross
 
       - name: Check out SDL3
         uses: actions/checkout@v4
@@ -48,24 +46,23 @@ jobs:
           path: build/SDL
           persist-credentials: false
 
-      - name: Build SDL3 static framework for iOS
+      - name: Build SDL3 static libraries for iOS
         run: |
           set -euo pipefail
-          cmake -S build/SDL -B build/sdl-ios \
+          cmake -S build/SDL -B build/sdl-ios -G Ninja \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
             -DCMAKE_BUILD_TYPE=Release \
             -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF \
             -DSDL_STATIC=ON -DSDL_SHARED=ON -DSDL_FRAMEWORK=OFF
-          cmake --build build/sdl-ios --parallel 3
+          cmake --build build/sdl-ios
           cmake --install build/sdl-ios --prefix "$RUNNER_TEMP/sdl-ios"
-          find "$RUNNER_TEMP/sdl-ios" -maxdepth 3 | head -40
 
       - name: Configure DQ8 for iOS
         run: |
           set -euo pipefail
-          cmake -S . -B build/ios-probe \
+          cmake -S . -B build/ios -G Ninja \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
@@ -73,7 +70,6 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/sdl-ios" \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
-            -DSDL3_DIR="$RUNNER_TEMP/sdl-ios/lib/cmake/SDL3" \
             -DDQ8_BUILD_PS2RECOMP=ON \
             -DDQ8_LINK_GENERATED=OFF \
             -DDQ8_GFX_ENABLE_SDLGPU=ON \
@@ -85,85 +81,54 @@ jobs:
             -DPS2X_ENABLE_FFMPEG=OFF \
             -DPS2X_ENABLE_DEBUG_UI=OFF \
             -DPS2X_ENABLE_SCCACHE=OFF \
+            -DIOS_PROBE=ON \
             2>&1 | tee "$RUNNER_TEMP/configure.log"
 
-      - name: Compile runtime for iOS
+      - name: Build runtime stub
         run: |
           set +e
-          cmake --build build/ios-probe --target dq8 -j 3 2>&1 | tee "$RUNNER_TEMP/build.log"
-          echo "rc=${PIPESTATUS[0]}" | tee "$RUNNER_TEMP/build-rc.txt"
+          cmake --build build/ios --target dq8 2>&1 | tee "$RUNNER_TEMP/stub.log"
+          echo "stub rc=${PIPESTATUS[0]}"
 
-      - name: Build the SDL3 GPU graphics tree
+      - name: Build SDL3 GPU graphics tree
         run: |
           set +e
-          cmake --build build/ios-probe --target dq8_gfx_sdlgpu -j 3 2>&1 | tee "$RUNNER_TEMP/gfx.log"
+          cmake --build build/ios --target dq8_gfx_sdlgpu 2>&1 | tee "$RUNNER_TEMP/gfx.log"
           echo "gfx rc=${PIPESTATUS[0]}"
-          echo "### graphics build errors" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -E "error:|ld: |Undefined symbols" "$RUNNER_TEMP/gfx.log" | head -30 >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Dylib closure and undefined symbols
+      - name: Build the iOS host shell
+        if: ${{ inputs.host }}
         run: |
           set +e
-          BIN=build/ios-probe/src/runtime/dq8.app/dq8
-          echo "--- otool -L"
-          xcrun otool -L "$BIN"
-          echo "--- undefined (non-system) symbols"
-          xcrun nm -u "$BIN" | head -40
-          echo "--- SDL3 GPU symbols present in the final binary"
-          xcrun nm "$BIN" 2>/dev/null | grep -c "SDL_GPU\|SDL_CreateGPUDevice" || true
+          cmake --build build/ios --target dq8-ios 2>&1 | tee "$RUNNER_TEMP/host.log"
+          echo "host rc=${PIPESTATUS[0]}"
+          echo "### iOS host link errors" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E "error:|Undefined symbols|ld: |_raylib|_Is|_Get|_Load|_Init" "$RUNNER_TEMP/host.log" | head -40 >> "$GITHUB_STEP_SUMMARY" || echo none >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Collect first errors
+      - name: Inspect binaries
         if: always()
         run: |
-          echo "### First errors" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -E "error:|fatal error|Undefined symbols|ld: |CMake Error" "$RUNNER_TEMP/build.log" | head -40 >> "$GITHUB_STEP_SUMMARY" || echo "none" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -cE "error:" "$RUNNER_TEMP/build.log" | sed 's/^/error count: /' || true
+          for b in build/ios/src/runtime/dq8.app/dq8 build/ios/iosprobe/DQ8Probe.app/DQ8Probe; do
+            [ -f "$b" ] || continue
+            echo "=== $b"
+            file "$b"
+            xcrun lipo -info "$b" || true
+            xcrun otool -l "$b" | grep -A3 LC_BUILD_VERSION | head -5 || true
+            xcrun otool -L "$b" | head -8
+          done
 
-      - name: Inspect the produced binary
-        if: always()
-        run: |
-          BIN=$(find build/ios-probe -name dq8 -type f 2>/dev/null | head -1)
-          echo "binary: ${BIN:-<none>}"
-          if [ -n "$BIN" ]; then
-            file "$BIN"
-            xcrun lipo -info "$BIN" || true
-            xcrun otool -l "$BIN" | grep -E "LC_BUILD_VERSION|platform|minos|sdk" | head -8 || true
-          fi
-
-      - name: Pack a test .app
+      - name: Pack unsigned IPA
         if: always()
         run: |
           set -euo pipefail
-          BIN=$(find build/ios-probe -name dq8 -type f 2>/dev/null | head -1)
-          if [ -z "$BIN" ]; then echo "no binary, skipping app"; exit 0; fi
-          APP="$RUNNER_TEMP/Payload/DQ8Probe.app"
-          mkdir -p "$APP"
-          cp "$BIN" "$APP/DQ8Probe"
-          cat > "$APP/Info.plist" <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleExecutable</key><string>DQ8Probe</string>
-            <key>CFBundleIdentifier</key><string>dev.minis.dq8probe</string>
-            <key>CFBundleName</key><string>DQ8Probe</string>
-            <key>CFBundleVersion</key><string>1</string>
-            <key>CFBundleShortVersionString</key><string>0.1</string>
-            <key>CFBundlePackageType</key><string>APPL</string>
-            <key>MinimumOSVersion</key><string>16.0</string>
-            <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
-          </dict>
-          </plist>
-          PLIST
-          if [ -d "$RUNNER_TEMP/sdl-ios/SDL3.framework" ]; then
-            cp -R "$RUNNER_TEMP/sdl-ios/SDL3.framework" "$APP/" || true
-          fi
+          APP=build/ios/iosprobe/DQ8Probe.app
+          if [ ! -d "$APP" ]; then echo "no host app produced"; exit 0; fi
+          rm -rf "$RUNNER_TEMP/Payload"; mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
           ( cd "$RUNNER_TEMP" && zip -qry DQ8Probe-unsigned.ipa Payload )
-          echo "ipa: $(ls -l "$RUNNER_TEMP/DQ8Probe-unsigned.ipa")"
+          ls -l "$RUNNER_TEMP/DQ8Probe-unsigned.ipa"
 
       - name: Upload artifacts
         if: always()
@@ -171,9 +136,7 @@ jobs:
         with:
           name: ios-probe
           path: |
-            ${{ runner.temp }}/build.log
-            ${{ runner.temp }}/gfx.log
-            ${{ runner.temp }}/configure.log
+            ${{ runner.temp }}/*.log
             ${{ runner.temp }}/DQ8Probe-unsigned.ipa
           if-no-files-found: warn
           retention-days: 7
