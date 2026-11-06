@@ -163,9 +163,9 @@ jobs:
             rm -rf "$RUNNER_TEMP/Payload-$name"
             mkdir -p "$RUNNER_TEMP/Payload-$name"
             cp -R "$app" "$RUNNER_TEMP/Payload-$name/"
-            # iSH-style shells resolve relative paths oddly; stay absolute.
-            ditto -c -k --sequesterRsrc --keepParent \
-              "$RUNNER_TEMP/Payload-$name/Payload" "$RUNNER_TEMP/$name-unsigned.ipa"
+            # ditto is unhappy with the temp dir layout here; zip is enough for
+            # an unsigned IPA that a signing tool will rebuild anyway.
+            ( cd "$RUNNER_TEMP/Payload-$name" && zip -qry "$RUNNER_TEMP/$name-unsigned.ipa" Payload )
             echo "== $name"
             ls -l "$RUNNER_TEMP/$name-unsigned.ipa"
             shasum -a 256 "$RUNNER_TEMP/$name-unsigned.ipa"
