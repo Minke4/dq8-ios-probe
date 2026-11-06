@@ -243,7 +243,10 @@ if(PS2X_IS_VITA)
         pthread
     )
 else()
-    target_link_libraries(ps2_host_backend INTERFACE raylib)
+    if(NOT IOS_PROBE)
+        target_link_libraries(ps2_host_backend INTERFACE raylib)
+    endif()
+    # iOS: rl_shim.cpp in iosprobe supplies the raylib symbols on top of SDL3.
 
     if(PS2X_IS_ANDROID)
         target_link_libraries(ps2_host_backend INTERFACE log android)
